@@ -28,13 +28,14 @@ type ArtistRow struct {
 }
 
 type PlaylistRow struct {
-	ID          int       `db:"id"`
-	ULID        string    `db:"ulid"`
-	Name        string    `db:"name"`
-	UserAccount string    `db:"user_account"`
-	IsPublic    bool      `db:"is_public"`
-	CreatedAt   time.Time `db:"created_at"`
-	UpdatedAt   time.Time `db:"updated_at"`
+	ID            int       `db:"id"`
+	ULID          string    `db:"ulid"`
+	Name          string    `db:"name"`
+	UserAccount   string    `db:"user_account"`
+	IsPublic      bool      `db:"is_public"`
+	CreatedAt     time.Time `db:"created_at"`
+	UpdatedAt     time.Time `db:"updated_at"`
+	FavoriteCount int       `db:"favorite_count"`
 }
 
 type PlaylistSongRow struct {
