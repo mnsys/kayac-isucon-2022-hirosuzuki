@@ -82,7 +82,7 @@ func main() {
 	e.Logger.SetLevel(log.DEBUG)
 
 	e.Use(middleware.Logger())
-	e.Use(middleware.Recover())
+	//e.Use(middleware.Recover())
 	e.Use(cacheControllPrivate)
 
 	e.Renderer = tr
