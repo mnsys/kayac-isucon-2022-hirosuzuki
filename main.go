@@ -336,6 +336,22 @@ func getSongByULID(ctx context.Context, db connOrTx, songULID string) (*SongRow,
 	return &row, nil
 }
 
+func getFavoritedBy(ctx context.Context, db connOrTx, userAccount string) (map[int]bool, error) {
+	result := make(map[int]bool)
+	sql := "SELECT playlist_id FROM playlist_favorite WHERE favorite_user_account = ?"
+	var playlistIdList []struct {
+		PlaylistId int `db:"playlist_id"`
+	}
+	err := db.SelectContext(ctx, &playlistIdList, sql, userAccount)
+	if err != nil {
+		return result, err
+	}
+	for _, row := range playlistIdList {
+		result[row.PlaylistId] = true
+	}
+	return result, nil
+}
+
 func isFavoritedBy(ctx context.Context, db connOrTx, userAccount string, playlistID int) (bool, error) {
 	var count int
 	if err := db.GetContext(
@@ -401,6 +417,14 @@ func getRecentPlaylistSummaries(ctx context.Context, db connOrTx, userAccount st
 		return nil, nil
 	}
 
+	favoriteMap, err := getFavoritedBy(ctx, db, userAccount)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"error call getFavoritedBy: %w",
+			err,
+		)
+	}
+
 	playlists := make([]Playlist, 0, len(allPlaylists))
 	for _, playlist := range allPlaylists {
 		user := playlist.UserRow
@@ -409,11 +433,7 @@ func getRecentPlaylistSummaries(ctx context.Context, db connOrTx, userAccount st
 
 		var isFavorited bool
 		if userAccount != anonUserAccount {
-			var err error
-			isFavorited, err = isFavoritedBy(ctx, db, userAccount, playlist.ID)
-			if err != nil {
-				return nil, fmt.Errorf("error isFavoritedBy: %w", err)
-			}
+			isFavorited = favoriteMap[playlist.ID]
 		}
 
 		playlists = append(playlists, Playlist{
@@ -451,6 +471,15 @@ func getPopularPlaylistSummaries(ctx context.Context, db connOrTx, userAccount s
 	if len(popular) == 0 {
 		return nil, nil
 	}
+
+	favoriteMap, err := getFavoritedBy(ctx, db, userAccount)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"error call getFavoritedBy: %w",
+			err,
+		)
+	}
+
 	playlists := make([]Playlist, 0, len(popular))
 	for _, p := range popular {
 		playlist, err := getPlaylistByID(ctx, db, p.PlaylistID)
@@ -477,11 +506,7 @@ func getPopularPlaylistSummaries(ctx context.Context, db connOrTx, userAccount s
 		var isFavorited bool
 		if userAccount != anonUserAccount {
 			// 認証済みの場合はfavを取得
-			var err error
-			isFavorited, err = isFavoritedBy(ctx, db, userAccount, playlist.ID)
-			if err != nil {
-				return nil, fmt.Errorf("error isFavoritedBy: %w", err)
-			}
+			isFavorited = favoriteMap[playlist.ID]
 		}
 
 		playlists = append(playlists, Playlist{
@@ -528,14 +553,19 @@ func getCreatedPlaylistSummariesByUserAccount(ctx context.Context, db connOrTx, 
 		return nil, nil
 	}
 
+	favoriteMap, err := getFavoritedBy(ctx, db, userAccount)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"error call getFavoritedBy: %w",
+			err,
+		)
+	}
+
 	results := make([]Playlist, 0, len(playlists))
 	for _, row := range playlists {
 		songCount := row.SongCount
 		favoriteCount := row.FavoriteCount
-		isFavorited, err := isFavoritedBy(ctx, db, userAccount, row.ID)
-		if err != nil {
-			return nil, fmt.Errorf("error isFavoritedBy: %w", err)
-		}
+		isFavorited := favoriteMap[row.ID]
 		results = append(results, Playlist{
 			ULID:            row.ULID,
 			Name:            row.Name,
@@ -567,6 +597,14 @@ func getFavoritedPlaylistSummariesByUserAccount(ctx context.Context, db connOrTx
 		)
 	}
 
+	favoriteMap, err := getFavoritedBy(ctx, db, userAccount)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"error call getFavoritedBy: %w",
+			err,
+		)
+	}
+
 	playlists := make([]Playlist, 0, 100)
 	for _, fav := range playlistFavorites {
 		playlist, err := getPlaylistByID(ctx, db, fav.PlaylistID)
@@ -589,10 +627,7 @@ func getFavoritedPlaylistSummariesByUserAccount(ctx context.Context, db connOrTx
 
 		songCount := playlist.SongCount
 		favoriteCount := playlist.FavoriteCount
-		isFavorited, err := isFavoritedBy(ctx, db, userAccount, playlist.ID)
-		if err != nil {
-			return nil, fmt.Errorf("error isFavoritedBy: %w", err)
-		}
+		isFavorited := favoriteMap[playlist.ID]
 		playlists = append(playlists, Playlist{
 			ULID:            playlist.ULID,
 			Name:            playlist.Name,
