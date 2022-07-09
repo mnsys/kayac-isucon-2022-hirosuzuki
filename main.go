@@ -404,10 +404,7 @@ func getRecentPlaylistSummaries(ctx context.Context, db connOrTx, userAccount st
 	playlists := make([]Playlist, 0, len(allPlaylists))
 	for _, playlist := range allPlaylists {
 		user := playlist.UserRow
-		songCount, err := getSongsCountByPlaylistID(ctx, db, playlist.ID)
-		if err != nil {
-			return nil, fmt.Errorf("error getSongsCountByPlaylistID: %w", err)
-		}
+		songCount := playlist.SongCount
 		favoriteCount := playlist.FavoriteCount
 
 		var isFavorited bool
@@ -474,10 +471,7 @@ func getPopularPlaylistSummaries(ctx context.Context, db connOrTx, userAccount s
 			continue
 		}
 
-		songCount, err := getSongsCountByPlaylistID(ctx, db, playlist.ID)
-		if err != nil {
-			return nil, fmt.Errorf("error getSongsCountByPlaylistID: %w", err)
-		}
+		songCount := playlist.SongCount
 		favoriteCount := playlist.FavoriteCount
 
 		var isFavorited bool
@@ -536,10 +530,7 @@ func getCreatedPlaylistSummariesByUserAccount(ctx context.Context, db connOrTx, 
 
 	results := make([]Playlist, 0, len(playlists))
 	for _, row := range playlists {
-		songCount, err := getSongsCountByPlaylistID(ctx, db, row.ID)
-		if err != nil {
-			return nil, fmt.Errorf("error getSongsCountByPlaylistID: %w", err)
-		}
+		songCount := row.SongCount
 		favoriteCount := row.FavoriteCount
 		isFavorited, err := isFavoritedBy(ctx, db, userAccount, row.ID)
 		if err != nil {
@@ -596,10 +587,7 @@ func getFavoritedPlaylistSummariesByUserAccount(ctx context.Context, db connOrTx
 			return nil, nil
 		}
 
-		songCount, err := getSongsCountByPlaylistID(ctx, db, playlist.ID)
-		if err != nil {
-			return nil, fmt.Errorf("error getSongsCountByPlaylistID: %w", err)
-		}
+		songCount := playlist.SongCount
 		favoriteCount := playlist.FavoriteCount
 		isFavorited, err := isFavoritedBy(ctx, db, userAccount, playlist.ID)
 		if err != nil {
@@ -667,8 +655,8 @@ func getPlaylistDetailByPlaylistULID(ctx context.Context, db connOrTx, playlistU
 
 	songs := make([]Song, 0, len(resPlaylistSongs))
 	for _, row := range resPlaylistSongs {
-		var song SongRow = getSong(row.SongID)
-		var artist ArtistRow = getArtist(song.ArtistID)
+		song := getSong(row.SongID)
+		artist := getArtist(song.ArtistID)
 
 		songs = append(songs, Song{
 			ULID:        song.ULID,
@@ -1376,23 +1364,38 @@ func apiPlaylistUpdateHandler(c echo.Context) error {
 		return errorResponse(c, 500, "internal server error")
 	}
 
-	for i, songULID := range songULIDs {
-		song, err := getSongByULID(ctx, tx, songULID)
-		if err != nil {
+	if len(songULIDs) > 0 {
+		sql_vals := ""
+		for i, songULID := range songULIDs {
+			song := getSongByUlid(songULID)
+			if sql_vals != "" {
+				sql_vals += " ,"
+			}
+			sql_vals += fmt.Sprintf("(%d,%d,%d)", playlist.ID, i+1, song.ID)
+		}
+		sql := "INSERT INTO playlist_song (`playlist_id`, `sort_order`, `song_id`) VALUES /* */ " + sql_vals
+		if _, err := tx.ExecContext(
+			ctx,
+			sql,
+		); err != nil {
 			tx.Rollback()
-			c.Logger().Errorf("error getSongByULID: %s", err)
+			c.Logger().Error("error INSERT playlist_song %s", err)
 			return errorResponse(c, 500, "internal server error")
 		}
-		if song == nil {
-			tx.Rollback()
-			return errorResponse(c, 400, fmt.Sprintf("song not found. ulid: %s", songULID))
-		}
+	}
 
-		if err := insertPlaylistSong(ctx, tx, playlist.ID, i+1, song.ID); err != nil {
-			tx.Rollback()
-			c.Logger().Errorf("error insertPlaylistSong: %s", err)
-			return errorResponse(c, 500, "internal server error")
-		}
+	if _, err := tx.ExecContext(
+		ctx,
+		"UPDATE playlist SET song_count = ? WHERE id = ?",
+		len(songULIDs),
+		playlist.ID,
+	); err != nil {
+		tx.Rollback()
+		c.Logger().Errorf(
+			"error UPDATE playlist.song_count by id=%d: %s",
+			playlist.ID, err,
+		)
+		return errorResponse(c, 500, "internal server error")
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -1718,6 +1721,7 @@ func isAdminUser(account string) bool {
 }
 
 var songMap map[int]SongRow = nil
+var songUlidMap map[string]SongRow = nil
 var songMapMutex sync.Mutex
 var artistMap map[int]ArtistRow = nil
 var artistMapMutex sync.Mutex
@@ -1725,10 +1729,12 @@ var artistMapMutex sync.Mutex
 func initSongMap() {
 	log.Print("initSongMap")
 	songMap = make(map[int]SongRow)
+	songUlidMap = make(map[string]SongRow)
 	songs := []SongRow{}
 	db.Select(songs, `SELECT * FROM song`)
 	for i := range songs {
 		songMap[songs[i].ID] = songs[i]
+		songUlidMap[songs[i].ULID] = songs[i]
 	}
 }
 
@@ -1748,6 +1754,16 @@ func getSong(id int) SongRow {
 		initSongMap()
 	}
 	song := songMap[id]
+	songMapMutex.Unlock()
+	return song
+}
+
+func getSongByUlid(ulid string) SongRow {
+	songMapMutex.Lock()
+	if songMap == nil {
+		initSongMap()
+	}
+	song := songUlidMap[ulid]
 	songMapMutex.Unlock()
 	return song
 }
@@ -1813,7 +1829,7 @@ func initializeHandler(c echo.Context) error {
 
 	if _, err := conn.ExecContext(
 		ctx,
-		"UPDATE playlist SET favorite_count = (SELECT COUNT(*) from playlist_favorite WHERE playlist_id = playlist.id)",
+		"UPDATE playlist SET favorite_count = (SELECT COUNT(*) from playlist_favorite WHERE playlist_id = playlist.id), song_count = (SELECT COUNT(*) from playlist_song WHERE playlist_id = playlist.id)",
 	); err != nil {
 		c.Logger().Errorf("error: initialize %s", err)
 		return errorResponse(c, 500, "internal server error")
