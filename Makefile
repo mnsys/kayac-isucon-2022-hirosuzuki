@@ -17,6 +17,10 @@ deploy: build
 	ssh $(HOST1) sudo truncate -c -s 0 /var/log/nginx/access.log
 	ssh $(HOST1) sudo truncate -c -s 0 /tmp/sql.log
 
+deploy-mysql:
+	ssh $(TARGET) sudo tee /etc/mysql/mysql.conf.d/mysqld.cnf >/dev/null <mysqld.cnf
+	ssh $(TARGET) sudo systemctl restart mysql
+
 perf-logs-viewer:
 		# go install https://github.com/hirosuzuki/perf-logs-viewer:latest
 		perf-logs-viewer
