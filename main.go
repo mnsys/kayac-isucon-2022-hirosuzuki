@@ -19,7 +19,6 @@ import (
 	"github.com/hirosuzuki/go-sql-logger/pprofiler"
 	"github.com/jmoiron/sqlx"
 	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
 	"github.com/labstack/gommon/log"
 	"github.com/oklog/ulid/v2"
 	"github.com/srinathgs/mysqlstore"
@@ -81,7 +80,7 @@ func main() {
 	e.Debug = true
 	e.Logger.SetLevel(log.DEBUG)
 
-	e.Use(middleware.Logger())
+	//e.Use(middleware.Logger())
 	//e.Use(middleware.Recover())
 	e.Use(cacheControllPrivate)
 
