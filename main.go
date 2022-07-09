@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -691,25 +692,8 @@ func getPlaylistDetailByPlaylistULID(ctx context.Context, db connOrTx, playlistU
 
 	songs := make([]Song, 0, len(resPlaylistSongs))
 	for _, row := range resPlaylistSongs {
-		var song SongRow
-		if err := db.GetContext(
-			ctx,
-			&song,
-			"SELECT * FROM song WHERE id = ?",
-			row.SongID,
-		); err != nil {
-			return nil, fmt.Errorf("error Get song by id=%d: %w", row.SongID, err)
-		}
-
-		var artist ArtistRow
-		if err := db.GetContext(
-			ctx,
-			&artist,
-			"SELECT * FROM artist WHERE id = ?",
-			song.ArtistID,
-		); err != nil {
-			return nil, fmt.Errorf("error Get artist by id=%d: %w", song.ArtistID, err)
-		}
+		var song SongRow = getSong(row.SongID)
+		var artist ArtistRow = getArtist(song.ArtistID)
 
 		songs = append(songs, Song{
 			ULID:        song.ULID,
@@ -1758,6 +1742,51 @@ func isAdminUser(account string) bool {
 	return account == "adminuser"
 }
 
+var songMap map[int]SongRow = nil
+var songMapMutex sync.Mutex
+var artistMap map[int]ArtistRow = nil
+var artistMapMutex sync.Mutex
+
+func initSongMap() {
+	log.Print("initSongMap")
+	songMap = make(map[int]SongRow)
+	songs := []SongRow{}
+	db.Select(songs, `SELECT * FROM song`)
+	for i := range songs {
+		songMap[songs[i].ID] = songs[i]
+	}
+}
+
+func initArtistMap() {
+	log.Print("initArtistMap")
+	artistMap = make(map[int]ArtistRow)
+	artists := []ArtistRow{}
+	db.Select(artists, `SELECT * FROM artist`)
+	for i := range artists {
+		artistMap[artists[i].ID] = artists[i]
+	}
+}
+
+func getSong(id int) SongRow {
+	songMapMutex.Lock()
+	if songMap == nil {
+		initSongMap()
+	}
+	song := songMap[id]
+	songMapMutex.Unlock()
+	return song
+}
+
+func getArtist(id int) ArtistRow {
+	artistMapMutex.Lock()
+	if artistMap == nil {
+		initArtistMap()
+	}
+	artist := artistMap[id]
+	artistMapMutex.Unlock()
+	return artist
+}
+
 // 競技に必要なAPI
 // DBの初期化処理
 // auto generated dump data 20220424_0851 size prod
@@ -1814,6 +1843,14 @@ func initializeHandler(c echo.Context) error {
 		c.Logger().Errorf("error: initialize %s", err)
 		return errorResponse(c, 500, "internal server error")
 	}
+
+	songMapMutex.Lock()
+	initSongMap()
+	songMapMutex.Unlock()
+
+	artistMapMutex.Lock()
+	initArtistMap()
+	artistMapMutex.Unlock()
 
 	body := BasicResponse{
 		Result: true,
