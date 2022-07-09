@@ -440,7 +440,7 @@ func getPopularPlaylistSummaries(ctx context.Context, db connOrTx, userAccount s
 	if err := db.SelectContext(
 		ctx,
 		&popular,
-		`SELECT id playlist_id, favorite_count FROM playlist ORDER BY favorite_count DESC`,
+		`SELECT p.id playlist_id, p.favorite_count FROM playlist p USE INDEX (playlist_favorite_count) JOIN user u ON u.account = p.user_account WHERE p.is_public = true AND u.is_ban = false ORDER BY p.favorite_count DESC LIMIT 100`,
 	); err != nil {
 		return nil, fmt.Errorf(
 			"error Select playlist_favorite: %w",
