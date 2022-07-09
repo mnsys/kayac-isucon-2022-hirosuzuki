@@ -13,6 +13,7 @@ deploy: build
 	ssh $(TARGET) sudo systemctl restart nginx
 	ssh $(TARGET) pkill app || true
 	scp app $(TARGET):/var/www/isucon/webapp/golang/app
+	scp start.sh $(TARGET):/var/www/isucon/webapp/golang/start.sh
 	ssh $(HOST1) sudo truncate -c -s 0 /var/log/nginx/access.log
 	ssh $(HOST1) sudo truncate -c -s 0 /tmp/sql.log
 
