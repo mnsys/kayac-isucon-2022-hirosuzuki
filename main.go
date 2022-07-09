@@ -456,6 +456,7 @@ func getPopularPlaylistSummaries(ctx context.Context, db connOrTx, userAccount s
 	var popular []struct {
 		PlaylistID    int `db:"playlist_id"`
 		FavoriteCount int `db:"favorite_count"`
+		UserRow
 	}
 	if err := db.SelectContext(
 		ctx,
@@ -491,14 +492,7 @@ func getPopularPlaylistSummaries(ctx context.Context, db connOrTx, userAccount s
 			continue
 		}
 
-		user, err := getUserByAccount(ctx, db, playlist.UserAccount)
-		if err != nil {
-			return nil, fmt.Errorf("error getUserByAccount: %w", err)
-		}
-		// banされていたら除外
-		if user == nil || user.IsBan {
-			continue
-		}
+		user := p.UserRow
 
 		songCount := playlist.SongCount
 		favoriteCount := playlist.FavoriteCount
@@ -521,9 +515,6 @@ func getPopularPlaylistSummaries(ctx context.Context, db connOrTx, userAccount s
 			CreatedAt:       playlist.CreatedAt,
 			UpdatedAt:       playlist.UpdatedAt,
 		})
-		if len(playlists) >= 100 {
-			break
-		}
 	}
 	return playlists, nil
 }
