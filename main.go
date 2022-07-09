@@ -1773,6 +1773,14 @@ func initializeHandler(c echo.Context) error {
 		return errorResponse(c, 500, "internal server error")
 	}
 
+	if _, err := conn.ExecContext(
+		ctx,
+		"UPDATE playlist SET favorite_count = (SELECT COUNT(*) from playlist_favorite WHERE playlist_id = playlist.id)",
+	); err != nil {
+		c.Logger().Errorf("error: initialize %s", err)
+		return errorResponse(c, 500, "internal server error")
+	}
+
 	body := BasicResponse{
 		Result: true,
 		Status: 200,
