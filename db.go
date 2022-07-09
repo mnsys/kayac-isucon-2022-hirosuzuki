@@ -50,3 +50,8 @@ type PlaylistFavoriteRow struct {
 	FavoriteUserAccount string    `db:"favorite_user_account"`
 	CreatedAt           time.Time `db:"created_at"`
 }
+
+type PlaylistUserRow struct {
+	PlaylistRow
+	UserRow
+}

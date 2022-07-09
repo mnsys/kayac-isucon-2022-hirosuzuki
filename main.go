@@ -184,7 +184,7 @@ func validateSession(c echo.Context) (*UserRow, bool, error) {
 	err = db.GetContext(
 		c.Request().Context(),
 		&user,
-		"SELECT * FROM user where `account` = ?",
+		"SELECT * FROM user where `account` = ? /* validateSession */",
 		account,
 	)
 	if err != nil {
@@ -385,11 +385,11 @@ func getSongsCountByPlaylistID(ctx context.Context, db connOrTx, playlistID int)
 }
 
 func getRecentPlaylistSummaries(ctx context.Context, db connOrTx, userAccount string) ([]Playlist, error) {
-	var allPlaylists []PlaylistRow
+	var allPlaylists []PlaylistUserRow
 	if err := db.SelectContext(
 		ctx,
 		&allPlaylists,
-		"SELECT *, favorite_count FROM playlist where is_public = ? ORDER BY created_at DESC",
+		"SELECT u.*, p.*, p.favorite_count FROM playlist p use index (playlist_public_created_at) JOIN user u ON u.account = p.user_account where p.is_public = ? AND u.is_ban = false ORDER BY p.created_at DESC LIMIT 100",
 		true,
 	); err != nil {
 		return nil, fmt.Errorf(
@@ -403,14 +403,7 @@ func getRecentPlaylistSummaries(ctx context.Context, db connOrTx, userAccount st
 
 	playlists := make([]Playlist, 0, len(allPlaylists))
 	for _, playlist := range allPlaylists {
-		user, err := getUserByAccount(ctx, db, playlist.UserAccount)
-		if err != nil {
-			return nil, fmt.Errorf("error getUserByAccount: %w", err)
-		}
-		if user == nil || user.IsBan {
-			continue
-		}
-
+		user := playlist.UserRow
 		songCount, err := getSongsCountByPlaylistID(ctx, db, playlist.ID)
 		if err != nil {
 			return nil, fmt.Errorf("error getSongsCountByPlaylistID: %w", err)
@@ -435,12 +428,9 @@ func getRecentPlaylistSummaries(ctx context.Context, db connOrTx, userAccount st
 			FavoriteCount:   favoriteCount,
 			IsFavorited:     isFavorited,
 			IsPublic:        playlist.IsPublic,
-			CreatedAt:       playlist.CreatedAt,
+			CreatedAt:       playlist.PlaylistRow.CreatedAt,
 			UpdatedAt:       playlist.UpdatedAt,
 		})
-		if len(playlists) >= 100 {
-			break
-		}
 	}
 	return playlists, nil
 }
@@ -732,7 +722,7 @@ func getUserByAccount(ctx context.Context, db connOrTx, account string) (*UserRo
 	if err := db.GetContext(
 		ctx,
 		&result,
-		"SELECT * FROM user WHERE `account` = ?",
+		"SELECT * FROM user WHERE `account` = ? /* getUserByAccount */",
 		account,
 	); err != nil {
 		if err == sql.ErrNoRows {
