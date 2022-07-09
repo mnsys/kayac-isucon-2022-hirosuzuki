@@ -36,6 +36,7 @@ type PlaylistRow struct {
 	CreatedAt     time.Time `db:"created_at"`
 	UpdatedAt     time.Time `db:"updated_at"`
 	FavoriteCount int       `db:"favorite_count"`
+	SongCount     int       `db:"song_count"`
 }
 
 type PlaylistSongRow struct {

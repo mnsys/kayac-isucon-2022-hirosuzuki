@@ -299,7 +299,7 @@ func authPageHandler(c echo.Context) error {
 
 func getPlaylistByULID(ctx context.Context, db connOrTx, playlistULID string) (*PlaylistRow, error) {
 	var row PlaylistRow
-	if err := db.GetContext(ctx, &row, "SELECT *, favorite_count FROM playlist WHERE `ulid` = ?", playlistULID); err != nil {
+	if err := db.GetContext(ctx, &row, "SELECT * FROM playlist WHERE `ulid` = ?", playlistULID); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
@@ -310,7 +310,7 @@ func getPlaylistByULID(ctx context.Context, db connOrTx, playlistULID string) (*
 
 func getPlaylistByID(ctx context.Context, db connOrTx, playlistID int) (*PlaylistRow, error) {
 	var row PlaylistRow
-	if err := db.GetContext(ctx, &row, "SELECT *, favorite_count FROM playlist WHERE `id` = ?", playlistID); err != nil {
+	if err := db.GetContext(ctx, &row, "SELECT * FROM playlist WHERE `id` = ?", playlistID); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
@@ -389,7 +389,7 @@ func getRecentPlaylistSummaries(ctx context.Context, db connOrTx, userAccount st
 	if err := db.SelectContext(
 		ctx,
 		&allPlaylists,
-		"SELECT u.*, p.*, p.favorite_count FROM playlist p use index (playlist_public_created_at) JOIN user u ON u.account = p.user_account where p.is_public = ? AND u.is_ban = false ORDER BY p.created_at DESC LIMIT 100",
+		"SELECT u.*, p.* FROM playlist p use index (playlist_public_created_at) JOIN user u ON u.account = p.user_account where p.is_public = ? AND u.is_ban = false ORDER BY p.created_at DESC LIMIT 100",
 		true,
 	); err != nil {
 		return nil, fmt.Errorf(
@@ -514,7 +514,7 @@ func getCreatedPlaylistSummariesByUserAccount(ctx context.Context, db connOrTx, 
 	if err := db.SelectContext(
 		ctx,
 		&playlists,
-		"SELECT *, favorite_count FROM playlist where user_account = ? ORDER BY created_at DESC LIMIT 100",
+		"SELECT * FROM playlist where user_account = ? ORDER BY created_at DESC LIMIT 100",
 		userAccount,
 	); err != nil {
 		return nil, fmt.Errorf(
@@ -1241,7 +1241,7 @@ func apiPlaylistAddHandler(c echo.Context) error {
 
 	if _, err := conn.ExecContext(
 		ctx,
-		"INSERT INTO playlist (`ulid`, `name`, `user_account`, `is_public`, `created_at`, `updated_at`, favorite_count) VALUES (?, ?, ?, ?, ?, ?, 0)",
+		"INSERT INTO playlist (`ulid`, `name`, `user_account`, `is_public`, `created_at`, `updated_at`) VALUES (?, ?, ?, ?, ?, ?)",
 		playlistULID.String(), name, userAccount, false, createTimestamp, createTimestamp, // 作成時は非公開
 	); err != nil {
 		c.Logger().Errorf(
