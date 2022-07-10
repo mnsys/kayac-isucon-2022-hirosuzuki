@@ -20,6 +20,7 @@ import (
 	"github.com/hirosuzuki/go-sql-logger/pprofiler"
 	"github.com/jmoiron/sqlx"
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 	"github.com/labstack/gommon/log"
 	"github.com/oklog/ulid/v2"
 	"github.com/srinathgs/mysqlstore"
@@ -83,6 +84,7 @@ func main() {
 
 	//e.Use(middleware.Logger())
 	//e.Use(middleware.Recover())
+	e.Use(middleware.RequestID())
 	e.Use(cacheControllPrivate)
 
 	e.Renderer = tr
@@ -1362,20 +1364,6 @@ func apiPlaylistUpdateHandler(c echo.Context) error {
 		return errorResponse(c, 500, "internal server error")
 	}
 
-	// name, is_publicの更新
-	if _, err := tx.ExecContext(
-		ctx,
-		"UPDATE playlist SET name = ?, is_public = ?, `updated_at` = ? WHERE `ulid` = ?",
-		name, isPublic, updatedTimestamp, playlist.ULID,
-	); err != nil {
-		tx.Rollback()
-		c.Logger().Errorf(
-			"error Update playlist by name=%s, is_public=%t, updated_at=%s, ulid=%s: %s",
-			name, isPublic, updatedTimestamp, playlist.ULID, err,
-		)
-		return errorResponse(c, 500, "internal server error")
-	}
-
 	// songsを削除→新しいものを入れる
 	if _, err := tx.ExecContext(
 		ctx,
@@ -1410,16 +1398,16 @@ func apiPlaylistUpdateHandler(c echo.Context) error {
 		}
 	}
 
+	// name, is_publicの更新
 	if _, err := tx.ExecContext(
 		ctx,
-		"UPDATE playlist SET song_count = ? WHERE id = ?",
-		len(songULIDs),
-		playlist.ID,
+		"UPDATE playlist SET name = ?, is_public = ?, `updated_at` = ?, song_count = ? WHERE id = ?",
+		name, isPublic, updatedTimestamp, len(songULIDs), playlist.ID,
 	); err != nil {
 		tx.Rollback()
 		c.Logger().Errorf(
-			"error UPDATE playlist.song_count by id=%d: %s",
-			playlist.ID, err,
+			"error Update playlist by name=%s, is_public=%t, updated_at=%s, ulid=%s: %s",
+			name, isPublic, updatedTimestamp, playlist.ULID, err,
 		)
 		return errorResponse(c, 500, "internal server error")
 	}
@@ -1504,8 +1492,8 @@ func apiPlaylistDeleteHandler(c echo.Context) error {
 
 	if _, err := conn.ExecContext(
 		ctx,
-		"DELETE FROM playlist WHERE `ulid` = ?",
-		playlist.ULID,
+		"DELETE FROM playlist WHERE id = ?",
+		playlist.ID,
 	); err != nil {
 		c.Logger().Errorf("error Delete playlist by ulid=%s: %s", playlist.ULID, err)
 		return errorResponse(c, 500, "internal server error")
