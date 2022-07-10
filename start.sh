@@ -1,1 +1,3 @@
-ISUCON_DB_HOST=10.0.7.220 MYSQL_DRIVER_POSTFIX=:logger SQL_LOGFILE=/tmp/sql.log CPU_PROFILE_FILE=/tmp/cpu.pprof ./app
+
+# ISUCON_DB_HOST=10.0.7.220 MYSQL_DRIVER_POSTFIX=:logger SQL_LOGFILE=/tmp/sql.log CPU_PROFILE_FILE=/tmp/cpu.pprof ./app
+ISUCON_DB_HOST=10.0.2.12 MYSQL_DRIVER_POSTFIX=:logger SQL_LOGFILE=/tmp/sql.log CPU_PROFILE_FILE=/tmp/cpu.pprof ./app
