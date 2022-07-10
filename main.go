@@ -84,7 +84,7 @@ func main() {
 	e.Debug = true
 	e.Logger.SetLevel(log.DEBUG)
 
-	e.Use(middleware.Logger())
+	//e.Use(middleware.Logger())
 	//e.Use(middleware.Recover())
 	e.Use(middleware.RequestID())
 	e.Use(cacheControllPrivate)
@@ -566,6 +566,42 @@ func getPlaylistDetailByPlaylistULID(ctx context.Context, db connOrTx, playlistU
 	return getPlaylistDetailByPlaylistULIDWithPlaylist(ctx, db, playlistULID, viewerUserAccount, playlist)
 }
 
+func getSongs(ctx context.Context, id int) ([]PlaylistSongRow, error) {
+	var resPlaylistSongs []PlaylistSongRow
+	key := fmt.Sprintf("songs:%d", id)
+	item, err := mc.Get(key)
+	if err == nil && item != nil {
+		err := json.Unmarshal(item.Value, &resPlaylistSongs)
+		if err != nil {
+			return resPlaylistSongs, nil
+		}
+	}
+	if err := db.SelectContext(
+		ctx,
+		&resPlaylistSongs,
+		"SELECT * FROM playlist_song WHERE playlist_id = ?",
+		id,
+	); err != nil {
+		return resPlaylistSongs, err
+	}
+	vs, err := json.Marshal(resPlaylistSongs)
+	if err == nil {
+		mc.Set(&memcache.Item{
+			Key:        key,
+			Value:      vs,
+			Expiration: 60,
+		})
+	} else {
+		log.Error("error getSongs ", err)
+	}
+	return resPlaylistSongs, nil
+}
+
+func deleteSongsCache(id int) {
+	key := fmt.Sprintf("songs:%d", id)
+	mc.Delete(key)
+}
+
 func getPlaylistDetailByPlaylistULIDWithPlaylist(ctx context.Context, db connOrTx, playlistULID string, viewerUserAccount *string, playlist *PlaylistRow) (*PlaylistDetail, error) {
 	user, err := getUserByAccount(ctx, db, playlist.UserAccount)
 	if err != nil {
@@ -585,13 +621,8 @@ func getPlaylistDetailByPlaylistULIDWithPlaylist(ctx context.Context, db connOrT
 		}
 	}
 
-	var resPlaylistSongs []PlaylistSongRow
-	if err := db.SelectContext(
-		ctx,
-		&resPlaylistSongs,
-		"SELECT * FROM playlist_song WHERE playlist_id = ?",
-		playlist.ID,
-	); err != nil {
+	resPlaylistSongs, err := getSongs(ctx, playlist.ID)
+	if err != nil {
 		return nil, fmt.Errorf(
 			"error Select playlist_song by playlist_id=%d: %w",
 			playlist.ID, err,
