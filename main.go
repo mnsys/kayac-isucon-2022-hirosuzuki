@@ -23,7 +23,6 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/labstack/gommon/log"
 	"github.com/oklog/ulid/v2"
-	"github.com/srinathgs/mysqlstore"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -120,11 +119,7 @@ func main() {
 	db.SetMaxOpenConns(10)
 	defer db.Close()
 
-	sessionStore, err = mysqlstore.NewMySQLStoreFromConnection(db.DB, "sessions_golang", "/", 86400, []byte("powawa"))
-	if err != nil {
-		e.Logger.Fatalf("failed to initialize session store: %v", err)
-		return
-	}
+	sessionStore = sessions.NewCookieStore([]byte("sessions_golang"))
 
 	port := getEnv("SERVER_APP_PORT", "3000")
 	e.Logger.Infof("starting listen80 server on : %s ...", port)
