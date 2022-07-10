@@ -14,6 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/go-sql-driver/mysql"
 	"github.com/gorilla/sessions"
 	_ "github.com/hirosuzuki/go-sql-logger"
@@ -38,6 +39,7 @@ var (
 	tr           = &renderer{templates: template.Must(template.ParseGlob("views/*.html"))}
 	// for use ULID
 	entropy = ulid.Monotonic(rand.New(rand.NewSource(time.Now().UnixNano())), 0)
+	mc      *memcache.Client
 )
 
 func getEnv(key string, defaultValue string) string {
@@ -120,6 +122,8 @@ func main() {
 	defer db.Close()
 
 	sessionStore = sessions.NewCookieStore([]byte("sessions_golang"))
+
+	mc = memcache.New("10.0.7.220:11211")
 
 	port := getEnv("SERVER_APP_PORT", "3000")
 	e.Logger.Infof("starting listen80 server on : %s ...", port)
@@ -305,32 +309,10 @@ func getPlaylistByULID(ctx context.Context, db connOrTx, playlistULID string) (*
 	return &row, nil
 }
 
-func getPlaylistByID(ctx context.Context, db connOrTx, playlistID int) (*PlaylistRow, error) {
-	var row PlaylistRow
-	if err := db.GetContext(ctx, &row, "SELECT * FROM playlist WHERE `id` = ?", playlistID); err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("error Get playlist by id=%d: %w", playlistID, err)
-	}
-	return &row, nil
-}
-
 type connOrTx interface {
 	GetContext(ctx context.Context, dest interface{}, query string, args ...interface{}) error
 	SelectContext(ctx context.Context, dest interface{}, query string, args ...interface{}) error
 	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
-}
-
-func getSongByULID(ctx context.Context, db connOrTx, songULID string) (*SongRow, error) {
-	var row SongRow
-	if err := db.GetContext(ctx, &row, "SELECT * FROM song WHERE `ulid` = ?", songULID); err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("error Get song by ulid=%s: %w", songULID, err)
-	}
-	return &row, nil
 }
 
 func getFavoritedBy(ctx context.Context, db connOrTx, userAccount string) (map[int]bool, error) {
@@ -363,38 +345,6 @@ func isFavoritedBy(ctx context.Context, db connOrTx, userAccount string, playlis
 		)
 	}
 	return count > 0, nil
-}
-
-func getFavoritesCountByPlaylistID(ctx context.Context, db connOrTx, playlistID int) (int, error) {
-	var count int
-	if err := db.GetContext(
-		ctx,
-		&count,
-		"SELECT COUNT(*) AS cnt FROM playlist_favorite where playlist_id = ?",
-		playlistID,
-	); err != nil {
-		return 0, fmt.Errorf(
-			"error Get count of playlist_favorite by playlist_id=%d: %w",
-			playlistID, err,
-		)
-	}
-	return count, nil
-}
-
-func getSongsCountByPlaylistID(ctx context.Context, db connOrTx, playlistID int) (int, error) {
-	var count int
-	if err := db.GetContext(
-		ctx,
-		&count,
-		"SELECT COUNT(*) AS cnt FROM playlist_song where playlist_id = ?",
-		playlistID,
-	); err != nil {
-		return 0, fmt.Errorf(
-			"error Get count of playlist_song by playlist_id=%d: %w",
-			playlistID, err,
-		)
-	}
-	return count, nil
 }
 
 func getRecentPlaylistSummaries(ctx context.Context, db connOrTx, userAccount string) ([]Playlist, error) {
@@ -721,20 +671,6 @@ func getUserByAccount(ctx context.Context, db connOrTx, account string) (*UserRo
 		)
 	}
 	return &result, nil
-}
-
-func insertPlaylistSong(ctx context.Context, db connOrTx, playlistID, sortOrder, songID int) error {
-	if _, err := db.ExecContext(
-		ctx,
-		"INSERT INTO playlist_song (`playlist_id`, `sort_order`, `song_id`) VALUES (?, ?, ?)",
-		playlistID, sortOrder, songID,
-	); err != nil {
-		return fmt.Errorf(
-			"error Insert playlist_song by playlist_id=%d, sort_order=%d, song_id=%d: %w",
-			playlistID, sortOrder, songID, err,
-		)
-	}
-	return nil
 }
 
 func insertPlaylistFavorite(ctx context.Context, db connOrTx, playlistID int, favoriteUserAccount string, createdAt time.Time) error {

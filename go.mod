@@ -10,8 +10,8 @@ require (
 	github.com/labstack/echo/v4 v4.7.2
 	github.com/labstack/gommon v0.3.1
 	github.com/oklog/ulid/v2 v2.0.2
-	github.com/srinathgs/mysqlstore v0.0.0-20200417050510-9cbb9420fc4c
 	golang.org/x/crypto v0.0.0-20220411220226-7b82a4e95df4
+	github.com/bradfitz/gomemcache v0.0.0-20220106215444-fb4bf637b56d
 )
 
 require (
