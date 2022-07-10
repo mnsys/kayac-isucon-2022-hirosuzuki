@@ -305,6 +305,17 @@ func getPlaylistByULID(ctx context.Context, db connOrTx, playlistULID string) (*
 	return &row, nil
 }
 
+func getPlaylistByULID2(ctx context.Context, db connOrTx, playlistULID string) (*PlaylistRow, error) {
+	var row PlaylistRow
+	if err := db.GetContext(ctx, &row, "SELECT * FROM playlist WHERE `ulid` = ? /* 2 */", playlistULID); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("error Get playlist by ulid=%s: %w", playlistULID, err)
+	}
+	return &row, nil
+}
+
 func getPlaylistByID(ctx context.Context, db connOrTx, playlistID int) (*PlaylistRow, error) {
 	var row PlaylistRow
 	if err := db.GetContext(ctx, &row, "SELECT * FROM playlist WHERE `id` = ?", playlistID); err != nil {
@@ -610,7 +621,7 @@ func getFavoritedPlaylistSummariesByUserAccount(ctx context.Context, db connOrTx
 }
 
 func getPlaylistDetailByPlaylistULID(ctx context.Context, db connOrTx, playlistULID string, viewerUserAccount *string) (*PlaylistDetail, error) {
-	playlist, err := getPlaylistByULID(ctx, db, playlistULID)
+	playlist, err := getPlaylistByULID2(ctx, db, playlistULID)
 	if err != nil {
 		return nil, fmt.Errorf("error getPlaylistByULID: %w", err)
 	}
@@ -1242,6 +1253,8 @@ func apiPlaylistAddHandler(c echo.Context) error {
 	return nil
 }
 
+var songInsertMu sync.Mutex
+
 // POST /api/playlist/update
 
 func apiPlaylistUpdateHandler(c echo.Context) error {
@@ -1324,6 +1337,8 @@ func apiPlaylistUpdateHandler(c echo.Context) error {
 		return errorResponse(c, 500, "internal server error")
 	}
 
+	songInsertMu.Lock()
+
 	// songsを削除→新しいものを入れる
 	if _, err := tx.ExecContext(
 		ctx,
@@ -1335,6 +1350,7 @@ func apiPlaylistUpdateHandler(c echo.Context) error {
 			"error Delete playlist_song by id=%d: %s",
 			playlist.ID, err,
 		)
+		songInsertMu.Unlock()
 		return errorResponse(c, 500, "internal server error")
 	}
 
@@ -1353,10 +1369,13 @@ func apiPlaylistUpdateHandler(c echo.Context) error {
 			sql,
 		); err != nil {
 			tx.Rollback()
-			c.Logger().Error("error INSERT playlist_song %s", err)
+			c.Logger().Errorf("error INSERT playlist_song %s", err)
+			songInsertMu.Unlock()
 			return errorResponse(c, 500, "internal server error")
 		}
 	}
+
+	songInsertMu.Unlock()
 
 	// name, is_publicの更新
 	if _, err := tx.ExecContext(
