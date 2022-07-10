@@ -451,14 +451,13 @@ func getRecentPlaylistSummaries(ctx context.Context, db connOrTx, userAccount st
 
 func getPopularPlaylistSummaries(ctx context.Context, db connOrTx, userAccount string) ([]Playlist, error) {
 	var popular []struct {
-		PlaylistID    int `db:"playlist_id"`
-		FavoriteCount int `db:"favorite_count"`
+		PlaylistRow
 		UserRow
 	}
 	if err := db.SelectContext(
 		ctx,
 		&popular,
-		`SELECT p.id playlist_id, p.favorite_count FROM playlist p USE INDEX (playlist_favorite_count) JOIN user u ON u.account = p.user_account WHERE p.is_public = true AND u.is_ban = false ORDER BY p.favorite_count DESC LIMIT 100`,
+		`SELECT u.*, p.* FROM playlist p USE INDEX (playlist_favorite_count) JOIN user u ON u.account = p.user_account WHERE p.is_public = true AND u.is_ban = false ORDER BY p.favorite_count DESC LIMIT 100`,
 	); err != nil {
 		return nil, fmt.Errorf(
 			"error Select playlist_favorite: %w",
@@ -480,15 +479,7 @@ func getPopularPlaylistSummaries(ctx context.Context, db connOrTx, userAccount s
 
 	playlists := make([]Playlist, 0, len(popular))
 	for _, p := range popular {
-		playlist, err := getPlaylistByID(ctx, db, p.PlaylistID)
-		if err != nil {
-			return nil, fmt.Errorf("error getPlaylistByID: %w", err)
-		}
-		// 非公開プレイリストは除外
-		if playlist == nil || !playlist.IsPublic {
-			continue
-		}
-
+		playlist := p.PlaylistRow
 		user := p.UserRow
 
 		songCount := playlist.SongCount
@@ -1050,19 +1041,11 @@ func apiPopularPlaylistsHandler(c echo.Context) error {
 	}
 	defer conn.Close()
 
-	// トランザクションを使わないとfav数の順番が狂うことがある
-	tx, err := conn.BeginTxx(ctx, nil)
+	playlists, err := getPopularPlaylistSummaries(ctx, db, userAccount)
 	if err != nil {
-		c.Logger().Errorf("error conn.BeginTxx: %s", err)
-		return errorResponse(c, 500, "internal server error")
-	}
-	playlists, err := getPopularPlaylistSummaries(ctx, tx, userAccount)
-	if err != nil {
-		tx.Rollback()
 		c.Logger().Errorf("error getPopularPlaylistSummaries: %s", err)
 		return errorResponse(c, 500, "internal server error")
 	}
-	tx.Commit()
 
 	body := GetRecentPlaylistsResponse{
 		BasicResponse: BasicResponse{
