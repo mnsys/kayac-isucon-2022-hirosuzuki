@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io"
@@ -180,25 +181,20 @@ func validateSession(c echo.Context) (*UserRow, bool, error) {
 	if !ok {
 		return nil, false, nil
 	}
+
 	account := _account.(string)
-	var user UserRow
-	err = db.GetContext(
-		c.Request().Context(),
-		&user,
-		"SELECT * FROM user where `account` = ? /* validateSession */",
-		account,
-	)
+
+	ctx := c.Request().Context()
+	user, err := getUserByAccount(ctx, db, account)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, false, nil
-		}
 		return nil, false, fmt.Errorf("error Get UserRow from db: %w", err)
 	}
+
 	if user.IsBan {
 		return nil, false, nil
 	}
 
-	return &user, true, nil
+	return user, true, nil
 }
 
 func generatePasswordHash(password string) (string, error) {
@@ -654,7 +650,7 @@ func getPlaylistFavoritesByPlaylistIDAndUserAccount(ctx context.Context, db conn
 	return &result[0], nil
 }
 
-func getUserByAccount(ctx context.Context, db connOrTx, account string) (*UserRow, error) {
+func getUserByAccountNoCache(ctx context.Context, db connOrTx, account string) (*UserRow, error) {
 	var result UserRow
 	if err := db.GetContext(
 		ctx,
@@ -671,6 +667,39 @@ func getUserByAccount(ctx context.Context, db connOrTx, account string) (*UserRo
 		)
 	}
 	return &result, nil
+}
+
+func getUserByAccount(ctx context.Context, db connOrTx, account string) (*UserRow, error) {
+	key := "account:" + account
+	item, err := mc.Get(key)
+	if item != nil && err == nil {
+		var u UserRow
+		err := json.Unmarshal(item.Value, &u)
+		if err == nil {
+			return &u, nil
+		}
+		log.Print("err getUserByAccount json.Unmarshal ", err)
+	}
+	userRow, err := getUserByAccountNoCache(ctx, db, account)
+	if err != nil {
+		return userRow, err
+	}
+	vs, err := json.Marshal(*userRow)
+	if err == nil {
+		mc.Set(&memcache.Item{
+			Key:        key,
+			Value:      vs,
+			Expiration: 60,
+		})
+	} else {
+		log.Print("err getUserByAccount json.marshal ", err)
+	}
+	return userRow, nil
+}
+
+func deleteAccountCache(account string) error {
+	key := "account:" + account
+	return mc.Delete(key)
 }
 
 func insertPlaylistFavorite(ctx context.Context, db connOrTx, playlistID int, favoriteUserAccount string, createdAt time.Time) error {
@@ -1610,6 +1639,7 @@ func apiAdminUserBanHandler(c echo.Context) error {
 		c.Logger().Errorf("error Update user by is_ban=%t, account=%s: %s", isBan, userAccount, err)
 		return errorResponse(c, 500, "internal server error")
 	}
+	deleteAccountCache(userAccount)
 	updatedUser, err := getUserByAccount(ctx, conn, userAccount)
 	if err != nil {
 		c.Logger().Errorf("error getUserByAccount: %s", err)
