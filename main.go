@@ -116,7 +116,7 @@ func main() {
 		e.Logger.Fatalf("failed to connect db: %v", err)
 		return
 	}
-	db.SetMaxOpenConns(10)
+	db.SetMaxOpenConns(60)
 	defer db.Close()
 
 	sessionStore = sessions.NewCookieStore([]byte("sessions_golang"))
@@ -563,11 +563,11 @@ func getCreatedPlaylistSummariesByUserAccount(ctx context.Context, db connOrTx, 
 }
 
 func getFavoritedPlaylistSummariesByUserAccount(ctx context.Context, db connOrTx, userAccount string) ([]Playlist, error) {
-	var playlistFavorites []PlaylistFavoriteRow
+	var playlistFavorites []PlaylistUserRow
 	if err := db.SelectContext(
 		ctx,
 		&playlistFavorites,
-		"SELECT * FROM playlist_favorite where favorite_user_account = ? ORDER BY created_at DESC",
+		"SELECT u.*, p.* FROM playlist_favorite f JOIN playlist p ON p.id = f.playlist_id JOIN user u ON u.account = p.user_account where f.favorite_user_account = ? AND u.is_ban = false AND p.is_public = true ORDER BY f.created_at DESC LIMIT 100",
 		userAccount,
 	); err != nil {
 		return nil, fmt.Errorf(
@@ -586,23 +586,8 @@ func getFavoritedPlaylistSummariesByUserAccount(ctx context.Context, db connOrTx
 
 	playlists := make([]Playlist, 0, 100)
 	for _, fav := range playlistFavorites {
-		playlist, err := getPlaylistByID(ctx, db, fav.PlaylistID)
-		if err != nil {
-			return nil, fmt.Errorf("error getPlaylistByID: %w", err)
-		}
-		// 非公開は除外する
-		if playlist == nil || !playlist.IsPublic {
-			continue
-		}
-		user, err := getUserByAccount(ctx, db, playlist.UserAccount)
-		if err != nil {
-			return nil, fmt.Errorf("error getUserByAccount: %w", err)
-		}
-
-		// 作成したユーザーがbanされていたら除外する
-		if user == nil || user.IsBan {
-			return nil, nil
-		}
+		playlist := fav.PlaylistRow
+		user := fav.UserRow
 
 		songCount := playlist.SongCount
 		favoriteCount := playlist.FavoriteCount
@@ -619,9 +604,6 @@ func getFavoritedPlaylistSummariesByUserAccount(ctx context.Context, db connOrTx
 			CreatedAt:       playlist.CreatedAt,
 			UpdatedAt:       playlist.UpdatedAt,
 		})
-		if len(playlists) >= 100 {
-			break
-		}
 	}
 
 	return playlists, nil
