@@ -305,17 +305,6 @@ func getPlaylistByULID(ctx context.Context, db connOrTx, playlistULID string) (*
 	return &row, nil
 }
 
-func getPlaylistByULID2(ctx context.Context, db connOrTx, playlistULID string) (*PlaylistRow, error) {
-	var row PlaylistRow
-	if err := db.GetContext(ctx, &row, "SELECT * FROM playlist WHERE `ulid` = ? /* 2 */", playlistULID); err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("error Get playlist by ulid=%s: %w", playlistULID, err)
-	}
-	return &row, nil
-}
-
 func getPlaylistByID(ctx context.Context, db connOrTx, playlistID int) (*PlaylistRow, error) {
 	var row PlaylistRow
 	if err := db.GetContext(ctx, &row, "SELECT * FROM playlist WHERE `id` = ?", playlistID); err != nil {
@@ -621,14 +610,17 @@ func getFavoritedPlaylistSummariesByUserAccount(ctx context.Context, db connOrTx
 }
 
 func getPlaylistDetailByPlaylistULID(ctx context.Context, db connOrTx, playlistULID string, viewerUserAccount *string) (*PlaylistDetail, error) {
-	playlist, err := getPlaylistByULID2(ctx, db, playlistULID)
+	playlist, err := getPlaylistByULID(ctx, db, playlistULID)
 	if err != nil {
 		return nil, fmt.Errorf("error getPlaylistByULID: %w", err)
 	}
 	if playlist == nil {
 		return nil, nil
 	}
+	return getPlaylistDetailByPlaylistULIDWithPlaylist(ctx, db, playlistULID, viewerUserAccount, playlist)
+}
 
+func getPlaylistDetailByPlaylistULIDWithPlaylist(ctx context.Context, db connOrTx, playlistULID string, viewerUserAccount *string, playlist *PlaylistRow) (*PlaylistDetail, error) {
 	user, err := getUserByAccount(ctx, db, playlist.UserAccount)
 	if err != nil {
 		return nil, fmt.Errorf("error getUserByAccount: %w", err)
@@ -1158,7 +1150,7 @@ func apiPlaylistHandler(c echo.Context) error {
 		return errorResponse(c, 404, "playlist not found")
 	}
 
-	playlistDetails, err := getPlaylistDetailByPlaylistULID(ctx, conn, playlist.ULID, &userAccount)
+	playlistDetails, err := getPlaylistDetailByPlaylistULIDWithPlaylist(ctx, conn, playlist.ULID, &userAccount, playlist)
 	if err != nil {
 		c.Logger().Errorf("error getPlaylistDetailByPlaylistULID:  %s", err)
 		return errorResponse(c, 500, "internal server error")
